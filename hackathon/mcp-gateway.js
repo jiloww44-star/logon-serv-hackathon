@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 import { Client } from "@modelcontextprotocol/client";
 import { StdioClientTransport } from "@modelcontextprotocol/client/stdio";
 import { evaluatePolicy } from "./policy.js";
+import { intentHash } from "./approval-store.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -11,11 +12,12 @@ const registryPath = path.join(__dirname, "mcp", "tool-registry.json");
 const serverPath = path.join(__dirname, "mcp", "mock-server.js");
 
 export class McpAssuranceGateway {
-  constructor() {
+  constructor({ approvalStore = null } = {}) {
     this.client = null;
     this.transport = null;
     this.tools = new Map();
     this.registry = {};
+    this.approvalStore = approvalStore;
   }
 
   async connect() {
@@ -24,7 +26,7 @@ export class McpAssuranceGateway {
     this.registry = JSON.parse(await fs.readFile(registryPath, "utf8"));
     this.client = new Client({
       name: "logon-assurance-gate",
-      version: "0.2.0"
+      version: "0.3.0"
     });
     this.transport = new StdioClientTransport({
       command: process.execPath,
@@ -65,7 +67,11 @@ export class McpAssuranceGateway {
     );
   }
 
-  async governAndCall({ agent_id, tool_name, arguments: args = {} }) {
+  getTool(tool_name) {
+    return this.tools.get(tool_name) || null;
+  }
+
+  async governAndCall({ agent_id, tool_name, arguments: args = {}, approval_id = null }) {
     await this.connect();
 
     const entry = this.tools.get(tool_name);
@@ -100,17 +106,50 @@ export class McpAssuranceGateway {
       external_side_effect: control.external_side_effect
     });
 
-    if (policy.decision !== "PASS") {
+    const intent = {
+      agent_id,
+      tool_name,
+      arguments: args || {},
+      action: control.action,
+      resource: control.resource
+    };
+
+    if (policy.decision === "BLOCK") {
       return {
         executed: false,
-        tool: {
-          name: entry.name,
-          title: entry.title,
-          annotations: entry.annotations
-        },
+        tool: { name: entry.name, title: entry.title, annotations: entry.annotations },
         control,
         policy
       };
+    }
+
+    if (policy.decision === "ESCALATE") {
+      if (!approval_id || !this.approvalStore) {
+        return {
+          executed: false,
+          approval_required: true,
+          tool: { name: entry.name, title: entry.title, annotations: entry.annotations },
+          control,
+          policy
+        };
+      }
+
+      const validation = this.approvalStore.validate(approval_id, intent);
+      if (!validation.valid) {
+        return {
+          executed: false,
+          approval_required: true,
+          approval_invalid: true,
+          approval_reason: validation.reason,
+          tool: { name: entry.name, title: entry.title, annotations: entry.annotations },
+          control,
+          policy
+        };
+      }
+
+      policy.decision = "PASS";
+      policy.reasons = ["Independent human approval verified for the exact action intent."];
+      policy.controls = { ...policy.controls, approval: true };
     }
 
     const result = await this.client.callTool({
@@ -120,11 +159,10 @@ export class McpAssuranceGateway {
 
     return {
       executed: true,
-      tool: {
-        name: entry.name,
-        title: entry.title,
-        annotations: entry.annotations
-      },
+      approved: Boolean(approval_id),
+      approval_id: approval_id || null,
+      intent_hash: intentHash(intent),
+      tool: { name: entry.name, title: entry.title, annotations: entry.annotations },
       control,
       policy,
       result
