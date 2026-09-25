@@ -25,3 +25,6 @@ agent request
 The primary product identity is **Governance + Agent Assurance**. The Agent Economy is a governed deployment environment, not the product identity.
 
 No production payment settlement, enterprise identity provider, compliance certification or production MCP deployment is claimed by this repository.
+
+
+CI checkpoint: human approval boundary implemented and exact-intent replay protection covered by tests.
