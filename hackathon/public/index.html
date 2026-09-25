@@ -7,6 +7,7 @@ const requestEl=document.getElementById("request"),run=document.getElementById("
   vendor_payment_transfer:{vendorId:"V-1",amount:2500},
   grant_admin_access:{principal:"demo-agent"}
 };
+const pendingApprovals={};
 async function loadTools(){
   const host=document.getElementById("mcpTools");
   try{
@@ -25,6 +26,29 @@ async function loadTools(){
         const cls=d.executed?"executed":(d.policy.decision==="ESCALATE"?"held":"blocked");
         target.className="tool-result "+cls;
         target.textContent=(d.executed?"EXECUTED":"NOT EXECUTED")+" • "+d.policy.decision+" • "+d.policy.reasons.join(" ");
+        if(d.approval_request){
+          pendingApprovals[tool]=d.approval_request.approval_id;
+          target.innerHTML=esc(target.textContent)+"<br><button class=\"secondary approve-btn\" style=\"margin-top:8px\" data-tool=\""+esc(tool)+"\">Request approved action</button>";
+          target.querySelector(".approve-btn").onclick=async()=>{
+            const approvalId=pendingApprovals[tool];
+            try{
+              target.textContent="Approving…";
+              const ar=await fetch("/api/approvals/"+encodeURIComponent(approvalId)+"/approve",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({approver:"demo-human-approver"})});
+              const ad=await ar.json();
+              if(!ar.ok) throw new Error(ad.error||"Approval failed");
+              const rr=await fetch("/api/mcp/call",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({agent_id:"demo-agent",tool_name:tool,arguments:toolArguments[tool]||{},approval_id:approvalId})});
+              const rd=await rr.json();
+              if(!rr.ok) throw new Error(rd.error||"Approved execution failed");
+              target.className="tool-result "+(rd.executed?"executed":"blocked");
+              target.textContent=(rd.executed?"APPROVED + EXECUTED":"NOT EXECUTED")+" • "+rd.policy.decision+" • "+rd.policy.reasons.join(" ");
+              b.textContent=rd.executed?"Executed with approval":"Approval failed";
+              delete pendingApprovals[tool];
+            }catch(e){
+              target.className="tool-result blocked";
+              target.textContent="APPROVAL ERROR • "+e.message;
+            }
+          };
+        }
         b.textContent=d.executed?"Executed":"Policy "+d.policy.decision;
       }catch(e){target.className="tool-result blocked";target.textContent="ERROR • "+e.message;b.textContent="Retry";}finally{b.disabled=false}
     });
