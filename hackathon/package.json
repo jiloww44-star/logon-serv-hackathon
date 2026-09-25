@@ -5,9 +5,10 @@
   "description": "LOG_ON Governance + Agent Assurance hackathon MVP running its reasoning layer through SERV.",
   "scripts": {
     "start": "node server.js",
-    "test": "node --test test/policy.test.js test/mcp.test.js test/aagate.test.js",
+    "test": "node --test test/policy.test.js test/mcp.test.js test/aagate.test.js test/a2a.test.js",
     "test:mcp": "node --test test/mcp.test.js",
-    "test:aagate": "node --test test/aagate.test.js"
+    "test:aagate": "node --test test/aagate.test.js",
+    "test:a2a": "node --test test/a2a.test.js"
   },
   "engines": {
     "node": ">=18"
