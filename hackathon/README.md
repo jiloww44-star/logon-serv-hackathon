@@ -124,3 +124,22 @@ Demo endpoints:
 - `POST /api/approvals/:approval_id/approve`
 
 This approval store is intentionally in-memory and demo-only; it is not an enterprise identity or approval system.
+
+
+## Universal AAGATE boundary
+
+The MVP now introduces a protocol-neutral execution boundary in `hackathon/aagate.js`.
+
+Adapters expose a normalized action/resource/environment descriptor. AAGATE runs the deterministic LOG_ON policy before execution, applies the exact-intent human approval check for escalated actions, then calls the adapter only after authorization.
+
+Current adapters:
+
+- MCP — governed through `mcp-gateway.js`
+- REST — demo adapter in `rest-adapter.js`
+
+Endpoints:
+
+- `GET /api/aagate/adapters`
+- `POST /api/aagate/execute`
+
+This establishes the pattern for adding A2A, browser, database, email and economic-action adapters without creating a separate authorization model for each protocol.
