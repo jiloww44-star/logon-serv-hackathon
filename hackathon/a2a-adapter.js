@@ -102,6 +102,8 @@ export class A2AAssuranceAdapter {
   }
 }
 
+import crypto from "node:crypto";
+
 function cryptoRandomId() {
-  return Math.random().toString(36).slice(2, 10);
+  return crypto.randomUUID();
 }
