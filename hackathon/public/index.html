@@ -8,6 +8,43 @@ const requestEl=document.getElementById("request"),run=document.getElementById("
   grant_admin_access:{principal:"demo-agent"}
 };
 const pendingApprovals={};
+async function loadA2A(){
+  const host=document.getElementById("a2aAgents");
+  try{
+    const r=await fetch("/api/a2a/agents");
+    const d=await r.json();
+    if(!r.ok) throw new Error(d.error||"A2A discovery failed");
+    host.innerHTML=d.agents.map(a=>"<div class=\"tool-card\"><h3>"+esc(a.name)+"</h3><p>"+esc(a.description)+"</p><div class=\"tool-meta\">Agent: "+esc(a.agentId)+"<br>Protocol: "+esc(a.protocolVersion)+"<br>Skills: "+esc((a.skills||[]).join(", "))+"<br>Environment: "+esc(a.governance.environment)+"</div><button class=\"a2a-call\" data-agent=\""+esc(a.agentId)+"\">Govern + delegate</button><div class=\"tool-result\" id=\"a2a-result-"+esc(a.agentId)+"\"></div></div>").join("");
+    document.querySelectorAll(".a2a-call").forEach(b=>b.onclick=async()=>{
+      const target=b.dataset.agent;
+      const out=document.getElementById("a2a-result-"+target);
+      const args=target==="research-agent"?{action:"READ",resource:"market:public",message:"Research public market data."}:{action:"UPDATE",resource:"crm:customer",message:"Update production customer."};
+      b.disabled=true;b.textContent="Authorizing…";
+      try{
+        const r=await fetch("/api/aagate/execute",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({agent_id:"parent-agent",adapter:"a2a",target,arguments:args})});
+        const d=await r.json();
+        if(!r.ok) throw new Error(d.error||"A2A delegation failed");
+        out.className="tool-result "+(d.executed?"executed":(d.policy.decision==="ESCALATE"?"held":"blocked"));
+        out.innerHTML=esc((d.executed?"EXECUTED":"NOT EXECUTED")+" • "+d.policy.decision+" • "+d.policy.reasons.join(" "))+(d.approval_request?"<br><button class=\"secondary a2a-approve\" style=\"margin-top:8px\" data-agent=\""+esc(target)+"\" data-approval=\""+esc(d.approval_request.approval_id)+"\">Approve exact delegation</button>":"");
+        b.textContent=d.executed?"Delegated": "Policy "+d.policy.decision;
+        const approvalButton=out.querySelector(".a2a-approve");
+        if(approvalButton) approvalButton.onclick=async()=>{
+          const approval=approvalButton.dataset.approval;
+          out.textContent="Approving exact delegation…";
+          const ar=await fetch("/api/approvals/"+encodeURIComponent(approval)+"/approve",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({approver:"demo-human-approver"})});
+          const ad=await ar.json();
+          if(!ar.ok) throw new Error(ad.error||"Approval failed");
+          const rr=await fetch("/api/aagate/execute",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({agent_id:"parent-agent",adapter:"a2a",target,arguments:args,approval_id:approval})});
+          const rd=await rr.json();
+          if(!rr.ok) throw new Error(rd.error||"Delegated execution failed");
+          out.className="tool-result "+(rd.executed?"executed":"blocked");
+          out.textContent=(rd.executed?"APPROVED + EXECUTED":"NOT EXECUTED")+" • "+rd.policy.decision+" • "+rd.policy.reasons.join(" ");
+          b.textContent=rd.executed?"Delegated with approval":"Approval failed";
+        };
+      }catch(e){out.className="tool-result blocked";out.textContent="ERROR • "+e.message;b.textContent="Retry"}finally{b.disabled=false}
+    });
+  }catch(e){host.innerHTML="<div class=\"decision block\">A2A discovery error: "+esc(e.message)+"</div>"}
+}
 async function loadTools(){
   const host=document.getElementById("mcpTools");
   try{
@@ -69,5 +106,5 @@ function render(d){
     document.querySelector('.verify span').textContent=x.ok?'✓ '+x.text:'✕ '+x.text
   };
 }
-run.onclick=async()=>{run.disabled=true;run.textContent="Reasoning + enforcing…";try{const r=await fetch("/api/govern",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({request:requestEl.value})}),d=await r.json();if(!r.ok)throw new Error(d.error||"Request failed");render(d)}catch(e){result.innerHTML="<div class="decision block"><div class="big">ERROR</div><div>"+esc(e.message)+"</div></div>"}finally{run.disabled=false;run.textContent="Run through SERV + LOG_ON"}};health();loadTools();
+run.onclick=async()=>{run.disabled=true;run.textContent="Reasoning + enforcing…";try{const r=await fetch("/api/govern",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({request:requestEl.value})}),d=await r.json();if(!r.ok)throw new Error(d.error||"Request failed");render(d)}catch(e){result.innerHTML="<div class="decision block"><div class="big">ERROR</div><div>"+esc(e.message)+"</div></div>"}finally{run.disabled=false;run.textContent="Run through SERV + LOG_ON"}};health();loadA2A();loadTools();
 </script></body></html>
