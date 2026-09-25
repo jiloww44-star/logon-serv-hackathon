@@ -108,3 +108,19 @@ The demo uses stdio for a local MCP server. The same gateway boundary can be ada
 ## Dedicated hackathon repository
 
 This repository is the standalone home for the LOG_ON SERV Hackathon build. The original implementation was developed on the `hackathon/logon-assurance-gate` branch of `threathunter` and is being separated here for submission and continued development.
+
+
+## Human approval boundary
+
+Escalated MCP actions now generate a short-lived approval request bound to the exact intent:
+
+`agent + tool + action + resource + arguments`
+
+A human approval changes the decision from `ESCALATE` to `PASS` only when the exact intent matches. An approval cannot authorize a different argument set, a different resource, or a different tool.
+
+Demo endpoints:
+
+- `GET /api/approvals`
+- `POST /api/approvals/:approval_id/approve`
+
+This approval store is intentionally in-memory and demo-only; it is not an enterprise identity or approval system.
