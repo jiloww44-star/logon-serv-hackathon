@@ -7,6 +7,8 @@ import { reasonWithSERV } from "./serv.js";
 import { evaluatePolicy } from "./policy.js";
 import { McpAssuranceGateway } from "./mcp-gateway.js";
 import { ApprovalStore } from "./approval-store.js";
+import { AAGate } from "./aagate.js";
+import { RestAssuranceAdapter } from "./rest-adapter.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -15,6 +17,8 @@ const port = Number(process.env.PORT || 3000);
 const auditEvents = [];
 const approvalStore = new ApprovalStore();
 const mcpGateway = new McpAssuranceGateway({ approvalStore });
+const aagate = new AAGate({ approvalStore });
+aagate.registerAdapter("rest", new RestAssuranceAdapter());
 
 function canonicalEvent(event) {
   const { event_hash, ...unsigned } = event;
@@ -98,6 +102,59 @@ const server = http.createServer(async (req, res) => {
         model: process.env.SERV_MODEL || "SERV-Standard",
         mcp_gateway: true,
         human_approval: true
+      });
+    }
+
+    if (req.method === "GET" && req.url === "/api/aagate/adapters") {
+      return sendJson(res, 200, { adapters: aagate.listAdapters() });
+    }
+
+    if (req.method === "POST" && req.url === "/api/aagate/execute") {
+      const body = await readJson(req);
+      const agent_id = String(body.agent_id || "demo-agent").trim();
+      const adapter = String(body.adapter || "").trim();
+      const target = String(body.target || "").trim();
+      const args = body.arguments && typeof body.arguments === "object" ? body.arguments : {};
+      const approval_id = body.approval_id ? String(body.approval_id).trim() : null;
+      if (!adapter || !target) return sendJson(res, 400, { error: "adapter and target are required" });
+
+      const result = await aagate.authorizeAndExecute({
+        agent_id,
+        adapter,
+        target,
+        arguments: args,
+        approval_id
+      });
+
+      let approval_request = null;
+      if (result.policy.decision === "ESCALATE" && !approval_id && result.descriptor) {
+        approval_request = approvalStore.create({
+          agent_id,
+          tool_name: adapter + ":" + target,
+          arguments: args,
+          control: result.descriptor
+        });
+      }
+
+      const audit = recordAudit({
+        product: "LOG_ON Assurance Gate",
+        event_type: "AAGATE_EXECUTION",
+        agent_id,
+        adapter,
+        target,
+        action: result.descriptor?.action || "UNKNOWN",
+        resource: result.descriptor?.resource || "UNKNOWN",
+        decision: result.policy.decision,
+        executed: result.executed,
+        approval_id: approval_id || approval_request?.approval_id || null,
+        source: "AAGATE -> deterministic policy -> adapter"
+      });
+
+      return sendJson(res, 200, {
+        ...result,
+        approval_request,
+        audit,
+        audit_verification: verifyAuditChain()
       });
     }
 
