@@ -9,6 +9,7 @@ import { McpAssuranceGateway } from "./mcp-gateway.js";
 import { ApprovalStore } from "./approval-store.js";
 import { AAGate } from "./aagate.js";
 import { RestAssuranceAdapter } from "./rest-adapter.js";
+import { A2AAssuranceAdapter } from "./a2a-adapter.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -19,6 +20,8 @@ const approvalStore = new ApprovalStore();
 const mcpGateway = new McpAssuranceGateway({ approvalStore });
 const aagate = new AAGate({ approvalStore });
 aagate.registerAdapter("rest", new RestAssuranceAdapter());
+const a2aAdapter = new A2AAssuranceAdapter();
+aagate.registerAdapter("a2a", a2aAdapter);
 
 function canonicalEvent(event) {
   const { event_hash, ...unsigned } = event;
@@ -103,6 +106,10 @@ const server = http.createServer(async (req, res) => {
         mcp_gateway: true,
         human_approval: true
       });
+    }
+
+    if (req.method === "GET" && req.url === "/api/a2a/agents") {
+      return sendJson(res, 200, { agents: a2aAdapter.listAgents() });
     }
 
     if (req.method === "GET" && req.url === "/api/aagate/adapters") {
